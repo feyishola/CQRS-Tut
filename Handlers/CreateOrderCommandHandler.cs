@@ -3,30 +3,30 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using FluentValidation;
+using MediatR;
 using OrdersAPI.Data;
 using OrdersAPI.Events;
 using OrdersAPI.Models;
 
 namespace OrdersAPI.Handlers
 {
-    public class CreateOrderCommandHandler : ICommandHandler<CreateOrderCommand, OrderDto>
+    public class CreateOrderCommandHandler : IRequestHandler<CreateOrderCommand, OrderDto>
     {
-        // private readonly AppDbContext _context;
         private readonly WriteDbContext _context;
         private readonly IValidator<CreateOrderCommand> _validator;
-        private readonly IEventPublisher _eventPublisher;
+        private readonly IMediator _mediator;
 
-        public CreateOrderCommandHandler(WriteDbContext context, IValidator<CreateOrderCommand> validator, IEventPublisher eventPublisher)
+
+        public CreateOrderCommandHandler(WriteDbContext context, IValidator<CreateOrderCommand> validator, IMediator mediator)
         {
             _context = context;
             _validator = validator;
-            _eventPublisher = eventPublisher;
+            _mediator = mediator;
         }
 
-
-        public async Task<OrderDto> HandleAsync(CreateOrderCommand command)
+        public async Task<OrderDto> Handle(CreateOrderCommand request, CancellationToken cancellationToken)
         {
-            var validationResult = await _validator.ValidateAsync(command);
+             var validationResult = await _validator.ValidateAsync(request, cancellationToken);
 
             if (!validationResult.IsValid)
             {
@@ -35,16 +35,18 @@ namespace OrdersAPI.Handlers
 
             var order = new Order
             {
-                FirstName = command.FirstName,
-                LastName = command.LastName,
-                Status = command.Status,
-                TotalCost = command.TotalCost
+                FirstName = request.FirstName,
+                LastName = request.LastName,
+                Status = request.Status,
+                TotalCost = request.TotalCost
             };
 
             await _context.Orders.AddAsync(order);
             await _context.SaveChangesAsync();
 
-            await _eventPublisher.PublishAsync(new OrderCreatedEvent(order.Id, order.FirstName, order.LastName, order.TotalCost)); // Publish an event after creating the order
+            var orderCreatedEvent = new OrderCreatedEvent(order.Id, order.FirstName, order.LastName, order.TotalCost);
+            
+            await _mediator.Publish(orderCreatedEvent, cancellationToken); // Publish an event after creating
 
             return new OrderDto(
                 order.Id,
@@ -55,22 +57,6 @@ namespace OrdersAPI.Handlers
                 order.TotalCost
             );
         }
-
-        // public static async Task<Order> Handle(CreateOrderCommand command, AppDbContext context)  // This is the old way of doing it without the handler. We will replace this with the handler above.
-        // {
-        //     var order = new Order
-        //     {
-        //         FirstName = command.FirstName,
-        //         LastName = command.LastName,
-        //         Status = command.Status,
-        //         TotalCost = command.TotalCost
-        //     };
-
-        //     await context.Orders.AddAsync(order);
-        //     await context.SaveChangesAsync();
-
-        //     return order;
-        // }
 
     }
 }
